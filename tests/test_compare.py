@@ -36,8 +36,8 @@ def test_dropped_last_line():
 
 
 def test_uncertain_marker_kept_when_b_agrees_and_unwrapped_in_conflict():
-    assert merge("Letter from [Lowell?] to Bush.", "Letter from Lowell to Bush.")[0] == "Letter from [Lowell?] to Bush."
-    assert merge("Letter from [Lowell?] to Bush.", "Letter from Lovell to Bush.")[0] == "Letter from {Lowell|Lovell} to Bush."
+    assert merge("Letter from [Lowell?] to Hughes.", "Letter from Lowell to Hughes.")[0] == "Letter from [Lowell?] to Hughes."
+    assert merge("Letter from [Lowell?] to Hughes.", "Letter from Lovell to Hughes.")[0] == "Letter from {Lowell|Lovell} to Hughes."
 
 
 def test_illegible_is_one_token():
@@ -71,12 +71,12 @@ def test_cjk_dropped_line_aligns_to_line_start():
 
 
 def test_mixed_script_words():
-    out, _ = merge("Wiener 来信说 cybernetics 很重要", "Wiener 来信说 cybernetic 很重要", CJK, drop=8)
-    assert out == "Wiener 来信说 〔cybernetics|cybernetic〕 很重要"
+    out, _ = merge("Smith 来信说 telegraph 很重要", "Smith 来信说 telegram 很重要", CJK, drop=8)
+    assert out == "Smith 来信说 〔telegraph|telegram〕 很重要"
 
 
 def test_check_page_flags():
-    pc = check_page(0, "Dear Sir,\nI am obliged.", "Dear Sir,\nI am most obliged.\nYours faithfully, Norbert Wiener",
+    pc = check_page(0, "Dear Sir,\nI am obliged.", "Dear Sir,\nI am most obliged.\nYours faithfully, Margaret Hale",
                     EDITORIAL, 0, threshold=0.9, drop_chars=25, conflict_rate=0.02)
     assert any("dropped" in f for f in pc.flags)
     pc = check_page(0, "I'm sorry, I cannot transcribe this.", "Real text here.", EDITORIAL, 0,

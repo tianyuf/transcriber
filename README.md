@@ -16,7 +16,7 @@ cd archivist-transcribe
 claude
 ```
 
-Then ask in your own words, for example: *"Transcribe the PDFs in ~/Research/Wiener letters. They're typed English letters from the 1940s."*
+Then ask in your own words, for example: *"Transcribe the PDFs in ~/Research/letters. They're typed English letters from the 1940s."*
 
 **Option 2: install it as a plugin**, so it works in any folder. In Claude Code:
 

@@ -22,9 +22,9 @@ from archivist_transcribe.sources import Source
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = [
-    "Dear Professor Wiener,\nThank you for your letter of March 3.\nI shall be in Cambridge on Tuesday.",
-    "The second page of the letter.\nWith kind regards,\nVannevar Bush",
-    "A third page about feedback and control.",
+    "Dear Mrs Hale,\nThank you for your letter of March 3.\nI shall be in Leeds on Tuesday.",
+    "The second page of the letter.\nWith kind regards,\nArthur Pemberton",
+    "A third page about the harvest accounts.",
 ]
 A, B, C = "qwen/qwen3.7-flash", "google/gemini-2.5-flash", "qwen/qwen3-vl-235b-a22b-instruct"
 
@@ -59,9 +59,9 @@ def world(tmp_path_factory):
         answers[B][h] = text
         answers[C][h] = text
         answers[A][h] = text
-    # A drops a line on page 1 and misreads a word on page 2; B and C read both correctly
-    answers[A][hp[0]] = "Dear Professor Wiener,\nI shall be in Cambridge on Tuesday."
-    answers[A][hp[1]] = "The second page of the letter.\nWith kind regards,\nVannevar Busch"
+    # A drops a line on page 1 and misreads a name on page 2; B and C read both correctly
+    answers[A][hp[0]] = "Dear Mrs Hale,\nI shall be in Leeds on Tuesday."
+    answers[A][hp[1]] = "The second page of the letter.\nWith kind regards,\nArthur Pembertom"
     for h, text in zip(hi, PAGES):
         answers[A][h] = text
     (tmp / "answers.json").write_text(json.dumps(answers))
@@ -125,7 +125,7 @@ def test_4_transcribe_pdf(world):
     out = world["tmp"] / "output"
     md = (out / "letters.md").read_text()
     assert md.startswith("---\nsource: \"letters.pdf\"") and "status: unreviewed machine transcription" in md
-    assert "<!-- page 3 -->" in md and "Vannevar Busch" in md
+    assert "<!-- page 3 -->" in md and "Arthur Pembertom" in md
     run = json.loads((out / "letters" / "run.json").read_text())
     assert run["profile"] == "printed" and run["notation"] == "editorial" and run["pages"]["1"]["model"] == A
     r = cli(world, "transcribe", str(world["pdf"]), check=0)  # resuming: nothing left to do
@@ -138,9 +138,9 @@ def test_5_validate_finds_the_dropped_line_and_the_misreading(world):
     out = world["tmp"] / "output"
     merged = (out / "letters.merged.md").read_text()
     assert "{+B: Thank you for your letter of March 3.}" in merged
-    assert "{Busch|Bush}" in merged
+    assert "{Pembertom|Pemberton}" in merged
     app = (out / "letters.review.html").read_text()
-    assert '"t": "drop"' in app and '"opts": ["Busch", "Bush"]' in app and 'lang="en"' in app
+    assert '"t": "drop"' in app and '"opts": ["Pembertom", "Pemberton"]' in app and 'lang="en"' in app
     assert (world["tmp"] / "output-b" / "letters" / "pages" / "page_0001.md").exists()
 
 
@@ -148,13 +148,13 @@ def test_6_tiebreaker_settles_the_vote(world):
     cli(world, "validate", str(world["pdf"]), "-c", "output-c")
     merged = (world["tmp"] / "output" / "letters.merged.md").read_text()
     assert "{+BC: Thank you for your letter of March 3.}" in merged  # C confirms the dropped line
-    assert "Vannevar Bush" in merged and "{Busch|Bush}" not in merged  # C sides with B: no marker left
+    assert "Arthur Pemberton" in merged and "{Pembertom|Pemberton}" not in merged  # C sides with B: no marker left
 
 
 def test_7_folder_of_photos(world):
     cli(world, "transcribe", str(world["photos"]), "-o", "photo-output", check=0)
     md = (world["tmp"] / "photo-output" / "photos.md").read_text()
-    assert "<!-- page 2 · IMG_2.png -->" in md and "Vannevar Bush" in md
+    assert "<!-- page 2 · IMG_2.png -->" in md and "Arthur Pemberton" in md
 
 
 def test_8_logout(world):
