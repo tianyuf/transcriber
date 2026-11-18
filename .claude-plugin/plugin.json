@@ -1,0 +1,16 @@
+{
+  "name": "archivist-transcribe",
+  "version": "0.1.0",
+  "description": "Faithful, checkable transcriptions of scanned archival documents (PDFs or photos, any language, print or handwriting) with vision models on OpenRouter, a second-model check, and a proofreading app.",
+  "keywords": [
+    "transcription",
+    "OCR",
+    "archives",
+    "history",
+    "handwriting",
+    "manuscripts",
+    "digital humanities"
+  ],
+  "homepage": "https://github.com/tianyuf/archivist-transcribe",
+  "repository": "https://github.com/tianyuf/archivist-transcribe"
+}

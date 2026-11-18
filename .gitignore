@@ -1,0 +1,15 @@
+# transcription output and working files
+output*/
+inspect/
+*.review.html
+*.comparison.html
+*.merged.md
+.env
+
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+.DS_Store

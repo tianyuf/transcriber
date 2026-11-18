@@ -1,0 +1,13 @@
+{
+  "name": "archivist-transcribe",
+  "owner": {
+    "name": "archivist-transcribe maintainers"
+  },
+  "plugins": [
+    {
+      "name": "archivist-transcribe",
+      "source": "./",
+      "description": "Faithful, checkable transcriptions of scanned archival documents in any language, with a second-model check and a proofreading app."
+    }
+  ]
+}
