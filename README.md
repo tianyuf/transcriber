@@ -110,3 +110,7 @@ uv run pytest     # offline: tests run against a mock of OpenRouter, including t
 ```
 
 See `CLAUDE.md` for how the code is organized.
+
+## Licence
+
+MIT; see `LICENSE`. It depends on PyMuPDF, which is AGPL-licensed: fine for running the tool yourself, but check its terms before offering it as a hosted service.

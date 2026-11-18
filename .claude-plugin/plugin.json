@@ -12,5 +12,6 @@
     "digital humanities"
   ],
   "homepage": "https://github.com/tianyuf/archivist-transcribe",
-  "repository": "https://github.com/tianyuf/archivist-transcribe"
+  "repository": "https://github.com/tianyuf/archivist-transcribe",
+  "license": "MIT"
 }

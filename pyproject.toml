@@ -3,6 +3,7 @@ name = "archivist-transcribe"
 version = "0.1.0"
 description = "Transcribe scanned archival documents (PDFs or photos, any language) page by page with vision models on OpenRouter, then check the result with a second model and proofread it against the scans."
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "pymupdf>=1.24,<2",  # 2.x adds onnxruntime and a layout model we do not need
