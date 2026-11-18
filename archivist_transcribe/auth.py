@@ -1,6 +1,6 @@
 """Signing in to OpenRouter without ever handling the key by hand.
 
-`archivist auth login` runs OpenRouter's OAuth PKCE flow:
+`archivist-transcribe auth login` runs OpenRouter's OAuth PKCE flow:
 
 1. make a random code verifier and its SHA-256 challenge, and a random state;
 2. start a one-shot web server on a free localhost port and open
@@ -115,7 +115,7 @@ def delete_key() -> list[str]:
 def require_key() -> str:
     key, _ = stored_key()
     if not key:
-        sys.exit("Not signed in to OpenRouter. Run `archivist auth login` first "
+        sys.exit("Not signed in to OpenRouter. Run `archivist-transcribe auth login` first "
                  "(or set OPENROUTER_API_KEY).")
     return key
 
@@ -153,10 +153,10 @@ def exchange(code: str, verifier: str) -> str:
         except Exception:  # noqa: BLE001
             msg = r.text[:200]
         sys.exit(f"OpenRouter did not issue a key (HTTP {r.status_code}): {msg}\n"
-                 "The code is single-use and expires after 10 minutes; run `archivist auth login` again.")
+                 "The code is single-use and expires after 10 minutes; run `archivist-transcribe auth login` again.")
     key = r.json().get("key")
     if not key:
-        sys.exit("OpenRouter's reply contained no key; run `archivist auth login` again.")
+        sys.exit("OpenRouter's reply contained no key; run `archivist-transcribe auth login` again.")
     return key
 
 
@@ -186,7 +186,7 @@ def _wait_for_code(state: str) -> tuple[HTTPServer, dict]:
                 title, body = "Signed in", "archivist-transcribe has your OpenRouter key. You can close this tab."
             else:
                 result["error"] = q.get("error") or ("state mismatch" if "code" in q else "no code in the callback")
-                title, body = "Sign-in did not finish", html.escape(result["error"]) + ". Run <code>archivist auth login</code> again."
+                title, body = "Sign-in did not finish", html.escape(result["error"]) + ". Run <code>archivist-transcribe auth login</code> again."
             page = PAGE.format(title=title, body=body).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -221,8 +221,8 @@ def login(headless: bool = False, limit: str | None = None, expiration: str | No
         finished = result["_done"].wait(LOGIN_TIMEOUT)
         server.shutdown()
         if not finished:
-            sys.exit("Timed out waiting for the browser. Run `archivist auth login` again "
-                     "(or `archivist auth login --headless` to paste a code instead).")
+            sys.exit("Timed out waiting for the browser. Run `archivist-transcribe auth login` again "
+                     "(or `archivist-transcribe auth login --headless` to paste a code instead).")
         if "error" in result:
             sys.exit(f"Sign-in failed: {result['error']}")
         code = result["code"]
@@ -261,14 +261,14 @@ def describe_limits(info: dict) -> str:
 def status() -> int:
     key, where = stored_key()
     if not key:
-        print("Not signed in. Run `archivist auth login`.")
+        print("Not signed in. Run `archivist-transcribe auth login`.")
         return 1
     info = key_info(key)
     if info is None:
         print(f"A key is stored in {where}, but OpenRouter could not be reached to check it.")
         return 1
     if "_status" in info:
-        print(f"The key in {where} was rejected (HTTP {info['_status']}). Run `archivist auth login` again.")
+        print(f"The key in {where} was rejected (HTTP {info['_status']}). Run `archivist-transcribe auth login` again.")
         return 1
     print(f"Signed in with {info.get('label', 'a key')} from {where}.")
     print(describe_limits(info))

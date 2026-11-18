@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-archivist = "archivist_transcribe.cli:main"
+archivist-transcribe = "archivist_transcribe.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

@@ -18,7 +18,7 @@ A command-line tool for historians, run with `uv`. It does five things:
 The tool's root is the nearest folder above this skill's base directory that contains a `pyproject.toml` with `name = "archivist-transcribe"`. Call it ROOT and run every command as:
 
 ```sh
-uv run --project "ROOT" archivist <command> ...
+uv run --project "ROOT" archivist-transcribe <command> ...
 ```
 
 Run from the user's own working folder, so that relative paths and the `output/` folder land next to their documents. Quote every path: archive filenames often contain spaces, parentheses and non-Latin characters.
@@ -38,10 +38,10 @@ Pages are sent to OpenRouter and, through it, to the model's provider. The recom
 ### 2. Sign in (once per computer)
 
 ```sh
-uv run --project "ROOT" archivist auth status
+uv run --project "ROOT" archivist-transcribe auth status
 ```
 
-If not signed in, run `archivist auth login` in the foreground with a timeout of at least 300 seconds. Tell the user that a browser window will open. There they sign in to OpenRouter (or create a free account and add credit) and click to approve. The key goes straight into the system keychain; it never passes through you.
+If not signed in, run `archivist-transcribe auth login` in the foreground with a timeout of at least 300 seconds. Tell the user that a browser window will open. There they sign in to OpenRouter (or create a free account and add credit) and click to approve. The key goes straight into the system keychain; it never passes through you.
 
 - **Spending cap:** suggest `--limit 10` (USD) to anyone new to this.
 - **Remote machine (SSH):** use `--headless`. The user opens the printed address on any device and pastes back the code it shows. That code is single-use and expires in 10 minutes; it is not the key.
@@ -49,7 +49,7 @@ If not signed in, run `archivist auth login` in the foreground with a timeout of
 ### 3. Look before spending
 
 ```sh
-uv run --project "ROOT" archivist inspect "letters.pdf" --sample 1,12,40
+uv run --project "ROOT" archivist-transcribe inspect "letters.pdf" --sample 1,12,40
 ```
 
 This reports the page count, whether a PDF already has a usable text layer, and a cost estimate, and saves the sampled pages as JPEGs under `inspect/`. Look at those images yourself (Read them) to decide:
@@ -65,12 +65,12 @@ This reports the page count, whether a PDF already has a usable text layer, and 
 | The user wants long s, ligatures and abbreviation marks kept | `--diplomatic` |
 | Small print, footnotes, faint mimeograph | `--dpi 200` |
 
-If the text layer looks clean, say so. Transcription may be unnecessary (`archivist inspect FILE --show-text`).
+If the text layer looks clean, say so. Transcription may be unnecessary (`archivist-transcribe inspect FILE --show-text`).
 
 ### 4. Pilot on a few pages
 
 ```sh
-uv run --project "ROOT" archivist transcribe "letters.pdf" --pages 1-3 --language "English"
+uv run --project "ROOT" archivist-transcribe transcribe "letters.pdf" --pages 1-3 --language "English"
 ```
 
 Compare each pilot page with its scan. Read `output/<name>/pages/page_0001.md` next to the sample image, and check for dropped lines, "corrected" spellings, translated passages, and misread names or numbers. Show the user a short excerpt beside your assessment, not whole pages. Adjust the profile, language or dpi and rerun those pages with `--force` before going on.
@@ -78,7 +78,7 @@ Compare each pilot page with its scan. Read `output/<name>/pages/page_0001.md` n
 ### 5. The full run
 
 ```sh
-uv run --project "ROOT" archivist transcribe "letters.pdf" --language "English" --estimate
+uv run --project "ROOT" archivist-transcribe transcribe "letters.pdf" --language "English" --estimate
 ```
 
 State the estimated cost. Go ahead without asking when it is a few cents; ask first when it is more than about a dollar, or more than the user indicated. `--max-cost N` makes the tool refuse to start above N USD.
@@ -88,7 +88,7 @@ For more than about 10 pages, run in the background with output redirected to a 
 ### 6. Check it (when the text will be quoted, cited or published)
 
 ```sh
-uv run --project "ROOT" archivist validate "letters.pdf"
+uv run --project "ROOT" archivist-transcribe validate "letters.pdf"
 ```
 
 This transcribes the pages again with an independent model B into `output-b/`, the same prompt and settings but a different model family (Gemini 2.5 Flash, or Qwen 2.5 VL 72B for CJK). It then aligns the two versions word by word (character by character for CJK) and writes into `output/`:
@@ -108,7 +108,7 @@ Why two models: one model can drop a whole line without a trace, while another m
 - **It refuses pages** (often politically sensitive material, because the provider applies content rules). The run flags these as failed, or as "refusal or apology" pages in validation. Redo just those pages with `-m 30b --pages N --force`. The run log records which model produced each page.
 - **Hard handwriting.** Still start with flash, then validate. If B disagrees a lot, look at a few pages yourself and tell the user plainly how reliable the result is.
 
-`archivist models` lists the aliases and current prices. Any OpenRouter model with image input works with `-m`.
+`archivist-transcribe models` lists the aliases and current prices. Any OpenRouter model with image input works with `-m`.
 
 ## Review markers
 
@@ -138,7 +138,7 @@ For a folder of photos, `<name>` is the folder name, pages follow natural filena
 
 | Symptom | Cause and fix |
 |---|---|
-| "Not signed in" / HTTP 401 | `archivist auth login` |
+| "Not signed in" / HTTP 401 | `archivist-transcribe auth login` |
 | HTTP 402 | Out of credit or over the key's limit: https://openrouter.ai/settings/credits |
 | HTTP 404 "no provider" | Wrong model id, or a privacy setting excludes every provider of this model. Try without `--deny-data-collection`, or another model. |
 | Many HTTP 429 | Rate limited: lower `--workers` to 2. If every page fails with 429, the model is overloaded upstream; switch model rather than raising retries. |

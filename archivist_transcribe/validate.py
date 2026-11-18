@@ -126,7 +126,7 @@ def validate(src: Source, dir_a: Path, dir_b: Path, api_key: str | None, *, mode
         raise SystemExit("A and B must be different folders")
     run_a = read_run(dir_a, src)
     if not transcribe.pages_dir(dir_a, src).exists() or not run_a:
-        raise SystemExit(f"no transcription found in {dir_a}/{src.stem}/; run `archivist transcribe` first")
+        raise SystemExit(f"no transcription found in {dir_a}/{src.stem}/; run `archivist-transcribe transcribe` first")
     profile = run_a.get("profile", "printed")
     notation = notation_for(profile, run_a.get("notation"))
     model_b = model_b or DEFAULT_B.get(notation.name, DEFAULT_B_OTHER)

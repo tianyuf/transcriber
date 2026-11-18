@@ -36,7 +36,7 @@ Either way, Claude will:
 
 ## What it costs
 
-You pay OpenRouter directly for what you use. With the recommended model, **Qwen 3.7 Flash**, a typical page costs a small fraction of a cent, so a 300-page file comes to well under a dollar. Checking with a second model costs more, typically 2 to 10 times the transcription. The tool prints an estimate before every run and the actual charge afterwards. You can cap spending when you sign in (`archivist auth login --limit 10`) or per run (`--max-cost 2`).
+You pay OpenRouter directly for what you use. With the recommended model, **Qwen 3.7 Flash**, a typical page costs a small fraction of a cent, so a 300-page file comes to well under a dollar. Checking with a second model costs more, typically 2 to 10 times the transcription. The tool prints an estimate before every run and the actual charge afterwards. You can cap spending when you sign in (`archivist-transcribe auth login --limit 10`) or per run (`--max-cost 2`).
 
 ## Privacy and permissions
 
@@ -51,11 +51,11 @@ Pages are sent to OpenRouter and, through it, to the model's provider; Qwen 3.7 
 You need [uv](https://docs.astral.sh/uv/). It installs everything else on first use.
 
 ```sh
-uv run archivist auth login                      # sign in to OpenRouter in the browser (once)
-uv run archivist inspect letters.pdf --sample 1-3
-uv run archivist transcribe letters.pdf --language English
-uv run archivist validate letters.pdf            # second model + proofreading app
-uv run archivist models                          # recommended models and current prices
+uv run archivist-transcribe auth login                      # sign in to OpenRouter in the browser (once)
+uv run archivist-transcribe inspect letters.pdf --sample 1-3
+uv run archivist-transcribe transcribe letters.pdf --language English
+uv run archivist-transcribe validate letters.pdf            # second model + proofreading app
+uv run archivist-transcribe models                          # recommended models and current prices
 ```
 
 A source can be a PDF, a single image, or a folder of photos (one photo per page, in natural filename order). Useful options for `transcribe`:
@@ -69,7 +69,7 @@ A source can be a PDF, a single image, or a folder of photos (one photo per page
 | `--diplomatic` | keep long s, ligatures and abbreviation marks as written |
 | `--pages 1-3` | a pilot, or redoing particular pages (with `--force`) |
 | `--dpi 200` | small or faint print (PDFs) |
-| `-m 30b` | another model; see `archivist models` |
+| `-m 30b` | another model; see `archivist-transcribe models` |
 | `--estimate`, `--max-cost N` | know the cost before anything is sent |
 
 Runs are resumable: every page is saved the moment it is done, so after an interruption you just rerun the same command.

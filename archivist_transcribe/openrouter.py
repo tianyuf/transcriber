@@ -20,7 +20,7 @@ MODEL_ALIASES = {
     "gemini": "google/gemini-2.5-flash",
     "gemma": "google/gemma-4-26b-a4b-it",
 }
-# What each alias is good for, shown by `archivist models`.
+# What each alias is good for, shown by `archivist-transcribe models`.
 MODEL_NOTES = {
     "flash": "default: fast and very cheap, good on print and typescript in most languages; served by Alibaba, may refuse politically sensitive pages",
     "30b": "fallback when flash refuses a page; faithful, rarely 'corrects' the source",
@@ -95,10 +95,10 @@ def _error_message(resp: httpx.Response) -> str:
 
 
 FATAL_HINTS = {
-    401: "OpenRouter rejected the key. Run `archivist auth login` to sign in again.",
+    401: "OpenRouter rejected the key. Run `archivist-transcribe auth login` to sign in again.",
     402: "The OpenRouter account is out of credit or over its key's limit. Add credit at https://openrouter.ai/settings/credits.",
     403: "OpenRouter refused the request (moderation, or a provider or data policy that excludes every provider of this model).",
-    404: "No provider serves this model under the current settings: check the model id (`archivist models`) or your OpenRouter privacy settings.",
+    404: "No provider serves this model under the current settings: check the model id (`archivist-transcribe models`) or your OpenRouter privacy settings.",
 }
 
 

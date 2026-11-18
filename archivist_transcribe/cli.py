@@ -1,10 +1,10 @@
-"""archivist: transcribe scanned archival documents and check the result.
+"""archivist-transcribe: transcribe scanned archival documents and check the result.
 
-  archivist auth login                 sign in to OpenRouter in the browser (once per computer)
-  archivist inspect FILE --sample 1-3  look before you spend: text layer, cost, page images
-  archivist transcribe FILE            transcribe every page (resumable)
-  archivist validate FILE              check against a second model, build the proofreading app
-  archivist models                     recommended models and what they cost
+  archivist-transcribe auth login                 sign in to OpenRouter in the browser (once per computer)
+  archivist-transcribe inspect FILE --sample 1-3  look before you spend: text layer, cost, page images
+  archivist-transcribe transcribe FILE            transcribe every page (resumable)
+  archivist-transcribe validate FILE              check against a second model, build the proofreading app
+  archivist-transcribe models                     recommended models and what they cost
 
 FILE can be a PDF, an image, or a folder of images (one photo per page).
 """
@@ -101,7 +101,7 @@ def cmd_validate(a) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="archivist", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(prog="archivist-transcribe", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"archivist-transcribe {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     pt = sub.add_parser("transcribe", help="transcribe page by page (resumable)")
     pt.add_argument("sources", nargs="+", help="PDF(s), image(s) or folder(s) of images")
     pt.add_argument("-o", "--out", default="output", help="output folder (default: output)")
-    pt.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"model id or alias (default: {DEFAULT_MODEL}; see `archivist models`)")
+    pt.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"model id or alias (default: {DEFAULT_MODEL}; see `archivist-transcribe models`)")
     pt.add_argument("--profile", default="printed", choices=list(PROFILES), help="kind of document (default: printed)")
     pt.add_argument("--language", help="expected language(s) and script, e.g. 'German (Fraktur)', 'Ottoman Turkish in Arabic script'")
     pt.add_argument("--notation", choices=["editorial", "cjk"],
