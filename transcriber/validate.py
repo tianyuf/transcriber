@@ -22,12 +22,13 @@ from rich.table import Table
 from . import review, transcribe
 from .compare import PageCheck, check_page, content_len, is_blank, norms, tokenize
 from .profiles import notation_for
+from .providers import default_fallback, model_identity
 from .sources import Source
 
 console = Console()
 
 DEFAULT_B = {"cjk": "qwen/qwen2.5-vl-72b-instruct"}  # tested on Chinese archives
-DEFAULT_B_OTHER = "google/gemini-2.5-flash"  # an independent model family for everything else
+DEFAULT_B_OTHER = "google/gemini-3.1-flash-lite"  # an independent model family for everything else
 DEFAULT_C = "qwen/qwen3-vl-235b-a22b-instruct"
 DROP_CHARS = {"cjk": 8, "editorial": 25}  # a B-only span this long counts as a dropped line
 
@@ -42,14 +43,14 @@ def read_page(out: Path, src: Source, i: int) -> str | None:
     return f.read_text(encoding="utf-8") if f.exists() else None
 
 
-def ensure_run(src: Source, out: Path, settings: transcribe.Settings, pages: list[int], api_key: str) -> None:
+def ensure_run(src: Source, out: Path, settings: transcribe.Settings, pages: list[int], credentials: dict[str, str]) -> None:
     pdir = transcribe.pages_dir(out, src)
     missing = [i for i in pages if not transcribe.page_file(pdir, i).exists()]
     if not missing:
         return
     console.print(f"[cyan]{len(missing)} page(s) missing in {out}/; transcribing them with {settings.model}[/]")
     spec = ",".join(str(i + 1) for i in missing)
-    transcribe.run([src], settings, out, api_key, pages_spec=spec)
+    transcribe.run([src], settings, out, credentials, pages_spec=spec)
 
 
 def highlight(text: str, notation) -> str:
@@ -116,8 +117,9 @@ mark.conf{{background:#ffe08a}} mark.drop{{background:#b6f0c2}} mark.unc{{backgr
     out.write_text(page, encoding="utf-8")
 
 
-def validate(src: Source, dir_a: Path, dir_b: Path, api_key: str | None, *, model_b: str | None = None,
-             dir_c: Path | None = None, model_c: str = DEFAULT_C, c_all: bool = False, workers: int = 4,
+def validate(src: Source, dir_a: Path, dir_b: Path, credentials: dict[str, str] | None, *, model_b: str | None = None,
+             dir_c: Path | None = None, model_c: str = DEFAULT_C, c_all: bool = False,
+             fallback_model: str | None = None, use_fallback: bool = True, workers: int = 4,
              threshold: float = 0.9, drop_chars: int | None = None, conflict_rate: float = 0.02,
              show_all: bool = False) -> int:
     """Returns the number of flagged pages."""
@@ -126,12 +128,18 @@ def validate(src: Source, dir_a: Path, dir_b: Path, api_key: str | None, *, mode
         raise SystemExit("A and B must be different folders")
     run_a = read_run(dir_a, src)
     if not transcribe.pages_dir(dir_a, src).exists() or not run_a:
-        raise SystemExit(f"no transcription found in {dir_a}/{src.stem}/; run `archivist-transcribe transcribe` first")
+        raise SystemExit(f"no transcription found in {dir_a}/{src.stem}/; run `transcriber transcribe` first")
     profile = run_a.get("profile", "printed")
     notation = notation_for(profile, run_a.get("notation"))
     model_b = model_b or DEFAULT_B.get(notation.name, DEFAULT_B_OTHER)
+    if fallback_model is None and use_fallback and credentials is not None:
+        fallback_model = default_fallback([model_b, model_c] if dir_c else [model_b])
+    if fallback_model and model_identity(fallback_model) == model_identity(model_b):
+        raise SystemExit("--fallback-model must differ from model B")
+    if dir_c and fallback_model and model_identity(fallback_model) == model_identity(model_c):
+        raise SystemExit("--fallback-model must differ from model C")
     a_models = sorted({p["model"] for p in run_a["pages"].values()})
-    if model_b in a_models:
+    if model_identity(model_b) in {model_identity(model) for model in a_models}:
         console.print(f"[yellow]warning: B uses the same model as A ({model_b}); a model tends to agree with itself.[/]")
     base = dict(profile=profile, language=run_a.get("language"), layout=run_a.get("layout", "paragraphs"),
                 diplomatic=run_a.get("diplomatic", False), dpi=150, workers=workers, retries=5, timeout=180,
@@ -139,8 +147,9 @@ def validate(src: Source, dir_a: Path, dir_b: Path, api_key: str | None, *, mode
     first_page = next(iter(run_a["pages"].values()))
     base["dpi"] = first_page.get("dpi", 150)
     done_a = [i for i in range(n) if read_page(dir_a, src, i) is not None]
-    if api_key:
-        ensure_run(src, dir_b, transcribe.Settings(model=model_b, **base), done_a, api_key)
+    if credentials is not None:
+        ensure_run(src, dir_b, transcribe.Settings(model=model_b, fallback_model=fallback_model, **base),
+                   done_a, credentials)
     drop = drop_chars or DROP_CHARS[notation.name]
 
     texts_a = [read_page(dir_a, src, i) for i in range(n)]
@@ -150,14 +159,17 @@ def validate(src: Source, dir_a: Path, dir_b: Path, api_key: str | None, *, mode
     kw = dict(threshold=threshold, drop_chars=drop, conflict_rate=conflict_rate, looks_looped=transcribe.looks_looped)
     pages = [i for i in range(n) if texts_a[i] is not None or texts_b[i] is not None]
     checks = [check_page(i, texts_a[i], texts_b[i], notation, median_len, **kw) for i in pages]
-    labels = {"A": f"{dir_a} ({', '.join(a_models)})", "B": f"{dir_b} ({model_b})"}
+    run_b = read_run(dir_b, src)
+    b_models = sorted({p["model"] for p in run_b.get("pages", {}).values()}) or [model_b]
+    labels = {"A": f"{dir_a} ({', '.join(a_models)})", "B": f"{dir_b} ({', '.join(b_models)})"}
 
     if dir_c:
         if dir_c in (dir_a, dir_b):
             raise SystemExit("C must be a third folder")
         want = [c.page - 1 for c in checks] if c_all else [c.page - 1 for c in checks if not c.ok]
-        if api_key:
-            ensure_run(src, dir_c, transcribe.Settings(model=model_c, **base), want, api_key)
+        if credentials is not None:
+            ensure_run(src, dir_c, transcribe.Settings(model=model_c, fallback_model=fallback_model, **base),
+                       want, credentials)
         by_page = {c.page - 1: k for k, c in enumerate(checks)}
         n_three = 0
         for i in want:
@@ -165,8 +177,10 @@ def validate(src: Source, dir_a: Path, dir_b: Path, api_key: str | None, *, mode
             if c_text is not None:
                 checks[by_page[i]] = check_page(i, texts_a[i], texts_b[i], notation, median_len, c=c_text, **kw)
                 n_three += 1
-        labels["C"] = f"{dir_c} ({model_c})"
-        console.print(f"[cyan]three-way merge on {n_three} page(s) with C = {dir_c} ({model_c})[/]")
+        run_c = read_run(dir_c, src)
+        c_models = sorted({p["model"] for p in run_c.get("pages", {}).values()}) or [model_c]
+        labels["C"] = f"{dir_c} ({', '.join(c_models)})"
+        console.print(f"[cyan]three-way merge on {n_three} page(s) with C = {dir_c} ({', '.join(c_models)})[/]")
 
     checks.sort(key=lambda c: (c.ok, -c.severity, c.ratio))
     table = Table(title=f"{src.name}: A vs B" + (" + C" if dir_c else ""))

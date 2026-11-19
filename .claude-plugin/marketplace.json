@@ -1,13 +1,13 @@
 {
-  "name": "archivist-transcribe",
+  "name": "transcriber",
   "owner": {
-    "name": "archivist-transcribe maintainers"
+    "name": "transcriber maintainers"
   },
   "plugins": [
     {
-      "name": "archivist-transcribe",
+      "name": "transcriber",
       "source": "./",
-      "description": "Faithful, checkable transcriptions of scanned archival documents in any language, with a second-model check and a proofreading app."
+      "description": "Faithful, checkable transcriptions of scanned archival documents with OpenRouter or native provider APIs, model fallback, independent validation, and a proofreading app."
     }
   ]
 }

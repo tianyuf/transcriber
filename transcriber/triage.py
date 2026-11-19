@@ -1,8 +1,8 @@
-"""`archivist-transcribe inspect`: look at a source before spending anything on it.
+"""`transcriber inspect`: look at a source before spending anything on it.
 
 Reports page count and size, whether a PDF already has a text layer (and whether it looks
 usable), a cost estimate for the default model, and can save a few page images so a person
-or Claude can look at the script, hand and condition before choosing a profile.
+or an agent can look at the script, hand and condition before choosing a profile.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def inspect(src: Source, sample: str | None, out_dir: Path | None, dpi: int = 11
             chars = sum(s[0] for s in with_text) / len(with_text)
             cjk = sum(s[1] for s in with_text) / len(with_text)
             wordlike = sum(s[2] for s in with_text) / len(with_text)
-            verdict = ("looks clean; consider using it directly (`archivist-transcribe inspect --show-text`) "
+            verdict = ("looks clean; consider using it directly (`transcriber inspect --show-text`) "
                        "and transcribing only bad pages" if (cjk > 0.5 or wordlike > 0.8)
                        else "looks garbled (typical of old OCR) -> transcription will help")
             console.print(f"text layer: on {len(with_text)}/{len(probe)} sampled pages, ~{chars:.0f} chars/page, "

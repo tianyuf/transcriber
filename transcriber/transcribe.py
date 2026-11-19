@@ -3,8 +3,7 @@
 Each page image is sent to a vision model with the profile's prompt and retried with backoff.
 Finished pages are written to <out>/<stem>/pages/page_NNNN.md the moment they complete, so an
 interrupted run resumes where it stopped, and <out>/<stem>.md is rebuilt after every page.
-<out>/<stem>/run.json records, for every page, the model, prompt fingerprint and time, so each
-transcription can be cited with its provenance.
+<out>/<stem>/run.json records, for every page, the model, prompt fingerprint and time as provenance.
 """
 from __future__ import annotations
 
@@ -23,8 +22,9 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from . import __version__
-from .openrouter import SPEND, APIError, call_vision, fetch_pricing, money
+from .openrouter import SPEND, APIError, FatalAPIError, money
 from .profiles import BLANK, build_prompt, notation_for, prompt_id
+from .providers import call_vision, credentials_for, fetch_pricing, supports_temperature
 from .sources import Source
 
 console = Console()
@@ -64,6 +64,7 @@ class Settings:
     timeout: float
     deny_data_collection: bool
     notation: str | None = None  # None: the profile's default
+    fallback_model: str | None = None
 
     @property
     def prompt(self) -> str:
@@ -73,55 +74,88 @@ class Settings:
     def notation_name(self) -> str:
         return notation_for(self.profile, self.notation).name
 
+    @property
+    def models(self) -> list[str]:
+        return [self.model] + ([self.fallback_model] if self.fallback_model and self.fallback_model != self.model else [])
+
 
 @dataclass
 class PageResult:
     index: int
     text: str
+    model: str
     attempts: int
     seconds: float
     truncated: bool = False
+    used_fallback: bool = False
 
 
-def transcribe_page(src: Source, index: int, s: Settings, api_key: str, log) -> PageResult:
+def transcribe_page(src: Source, index: int, s: Settings, credentials: dict[str, str], log) -> PageResult:
+    """Transcribe one page, trying the fallback only after the primary cannot produce usable text."""
     started = time.monotonic()
     image, mime = src.render(index, s.dpi)
     prompt = s.prompt
     truncated_mark = notation_for(s.profile, s.notation).truncated
-    last_err: Exception | None = None
-    best_partial: str | None = None
-    temperature = 0.0
+    last_err: BaseException | None = None
+    best_partial: tuple[str, str] | None = None
+    attempts = 0
+    models = s.models
     with httpx.Client() as client:
-        for attempt in range(1, s.retries + 1):
-            try:
-                raw, finish = call_vision(client, api_key, s.model, prompt, image, mime, s.timeout, temperature,
-                                          s.deny_data_collection)
-                text = clean_markdown(raw)
-                if not text:
-                    raise APIError("empty response from model")
-                if finish == "length":
-                    raise APIError("response cut off at the length limit", partial=text, degenerate=True)
-                if looks_looped(text):
-                    raise APIError("repetition loop in response", degenerate=True)
-                return PageResult(index, text, attempt, time.monotonic() - started)
-            except (APIError, httpx.HTTPError) as e:
-                last_err = e
-                note = ""
-                if isinstance(e, APIError):
-                    if e.partial and len(e.partial) > len(best_partial or ""):
-                        best_partial = e.partial
-                    if e.degenerate:  # the same request at temperature 0 repeats the same loop
-                        temperature = min(0.8, temperature + 0.3)
-                        note = f", temperature -> {temperature:.1f}"
-                if attempt == s.retries:
+        for model_index, model in enumerate(models):
+            temperature = 0.0
+            for attempt in range(1, s.retries + 1):
+                attempts += 1
+                try:
+                    raw, finish = call_vision(client, credentials, model, prompt, image, mime, s.timeout, temperature,
+                                              s.deny_data_collection)
+                    text = clean_markdown(raw)
+                    if not text:
+                        raise APIError("empty response from model")
+                    if finish in ("length", "max_tokens"):
+                        raise APIError("response cut off at the length limit", partial=text, degenerate=True)
+                    if finish in ("content_filter", "refusal"):
+                        raise APIError("model refused the page", degenerate=True)
+                    if looks_looped(text):
+                        raise APIError("repetition loop in response", degenerate=True)
+                    return PageResult(index=index, text=text, model=model, attempts=attempts,
+                                      seconds=time.monotonic() - started, used_fallback=model != s.model)
+                except FatalAPIError as e:
+                    last_err = e
+                    if model_index == len(models) - 1:
+                        if best_partial:
+                            log(f"[yellow]{src.label(index)}[/] {model} failed: {e!s:.160}; "
+                                f"preserving partial output from {best_partial[0]}")
+                            break
+                        raise
                     break
-                delay = min(30.0, 2 ** (attempt - 1) + random.uniform(0, 1))
-                log(f"[yellow]{src.label(index)}[/] attempt {attempt}/{s.retries} failed: {e!s:.120} - retrying in {delay:.1f}s{note}")
-                time.sleep(delay)
+                except (APIError, httpx.HTTPError) as e:
+                    last_err = e
+                    note = ""
+                    if isinstance(e, APIError):
+                        if e.partial and len(e.partial) > len(best_partial[1] if best_partial else ""):
+                            best_partial = (model, e.partial)
+                        if e.degenerate:  # the same request at temperature 0 repeats the same loop
+                            if supports_temperature(model):
+                                temperature = min(0.8, temperature + 0.3)
+                                note = f", temperature -> {temperature:.1f}"
+                            else:
+                                log(f"[yellow]{src.label(index)}[/] {model} failed: {e!s:.120}; "
+                                    "sampling is fixed, skipping identical retries")
+                                break
+                    if attempt == s.retries:
+                        break
+                    delay = min(30.0, 2 ** (attempt - 1) + random.uniform(0, 1))
+                    log(f"[yellow]{src.label(index)}[/] {model} attempt {attempt}/{s.retries} failed: "
+                        f"{e!s:.120} - retrying in {delay:.1f}s{note}")
+                    time.sleep(delay)
+            if model_index < len(models) - 1:
+                log(f"[yellow]{src.label(index)}[/] {model} failed; falling back to {models[model_index + 1]}: "
+                    f"{last_err!s:.160}")
     if best_partial:  # better a visibly incomplete page than none; validate flags the marker
-        return PageResult(index, best_partial.rstrip() + "\n\n" + truncated_mark, s.retries,
-                          time.monotonic() - started, truncated=True)
-    raise APIError(f"{src.label(index)} failed after {s.retries} attempts: {last_err}")
+        model, text = best_partial
+        return PageResult(index=index, text=text.rstrip() + "\n\n" + truncated_mark, model=model, attempts=attempts,
+                          seconds=time.monotonic() - started, truncated=True, used_fallback=model != s.model)
+    raise APIError(f"{src.label(index)} failed with {', '.join(models)} after {attempts} attempts: {last_err}")
 
 
 def parse_pages(spec: str | None, n_pages: int) -> list[int]:
@@ -156,14 +190,15 @@ class RunLog:
     def record(self, src: Source, s: Settings, r: PageResult) -> None:
         with self.lock:
             self.data.update({
-                "source": src.name, "tool": f"archivist-transcribe {__version__}",
+                "source": src.name, "tool": f"transcriber {__version__}",
                 "profile": s.profile, "notation": s.notation_name, "language": s.language, "layout": s.layout,
-                "diplomatic": s.diplomatic,
+                "diplomatic": s.diplomatic, "fallback_model": s.fallback_model,
             })
             self.data["pages"][str(r.index + 1)] = {
-                "model": s.model, "prompt_id": prompt_id(s.prompt), "dpi": s.dpi,
+                "model": r.model, "prompt_id": prompt_id(s.prompt), "dpi": s.dpi,
                 "transcribed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "attempts": r.attempts, "truncated": r.truncated,
+                "attempts": r.attempts, "truncated": r.truncated, "used_fallback": r.used_fallback,
+                **({"fallback_from": s.model} if r.used_fallback else {}),
                 **({"image": src.files[r.index].name} if src.kind == "images" else {}),
             }
             self.path.write_text(json.dumps(self.data, indent=1, ensure_ascii=False), encoding="utf-8")
@@ -179,7 +214,7 @@ def front_matter(src: Source, run: dict, n_pages: int, missing: int) -> str:
         f"source: {json.dumps(src.name, ensure_ascii=False)}",
         f"pages: {n_pages}",
         f"pages_transcribed: {n_pages - missing}",
-        f"method: machine transcription from page images ({run.get('tool', 'archivist-transcribe')})",
+        f"method: machine transcription from page images ({run.get('tool', 'transcriber')})",
         f"models: {json.dumps(models)}",
         f"profile: {run.get('profile', '')}",
         f"notation: {run.get('notation', '')}",
@@ -189,7 +224,7 @@ def front_matter(src: Source, run: dict, n_pages: int, missing: int) -> str:
     lines += [
         f"prompt_id: {json.dumps(prompts)}",
         f"transcribed: {dates[0] + (' to ' + dates[-1] if dates and dates[-1] != dates[0] else '') if dates else ''}",
-        "status: unreviewed machine transcription; check against the page images before quoting",
+        "status: unreviewed machine transcription",
         "---",
     ]
     return "\n".join(lines) + "\n"
@@ -215,7 +250,10 @@ def stitch(src: Source, out: Path, n_pages: int) -> int:
 
 
 def estimate(sources: list[Source], s: Settings, out: Path, pages_spec: str | None, force: bool) -> tuple[int, float | None]:
-    """Print the pages still to do, their tokens and likely cost. Returns (pages, dollars or None)."""
+    """Print the pages still to do and their likely cost, including worst-case fallback use.
+
+    Returns (pages, dollars or None). The dollar figure excludes additional retry charges.
+    """
     tin = tout = total = 0
     for src in sources:
         n = src.page_count()
@@ -226,21 +264,35 @@ def estimate(sources: list[Source], s: Settings, out: Path, pages_spec: str | No
         tin += sum(src.image_tokens(i, s.dpi) for i in todo) + PROMPT_TOKENS * len(todo)
         tout += per_page * len(todo)
         total += len(todo)
-    price = fetch_pricing(s.model)
-    line = f"estimate: {total} page(s) to transcribe with {s.model}, ~{tin:,} input + ~{tout:,} output tokens"
-    if price is None:
-        console.print(f"{line}; price unknown (could not read {s.model} from OpenRouter's model list)")
-        return total, None
-    cost = tin * price[0] + tout * price[1]
-    console.print(f"{line} -> about [bold]{money(cost)}[/] ({money(cost / total if total else 0)}/page; retries cost extra)")
+
+    def show(model: str, fallback: bool = False) -> float | None:
+        line = (f"fallback, if every page needs it: {total} page(s) with {model}" if fallback
+                else f"estimate: {total} page(s) to transcribe with {model}")
+        line += f", ~{tin:,} input + ~{tout:,} output tokens"
+        price = fetch_pricing(model)
+        if price is None:
+            console.print(f"{line}; price unknown for this model")
+            return None
+        cost = tin * price[0] + tout * price[1]
+        console.print(f"{line} -> about [bold]{money(cost)}[/] "
+                      f"({money(cost / total if total else 0)}/page; retries cost extra)")
+        return cost
+
+    cost = show(s.model)
+    if s.fallback_model and s.fallback_model != s.model:
+        fallback_cost = show(s.fallback_model, fallback=True)
+        cost = cost + fallback_cost if cost is not None and fallback_cost is not None else None
     return total, cost
 
 
-def run(sources: list[Source], s: Settings, out: Path, api_key: str, pages_spec: str | None = None,
-        force: bool = False) -> tuple[int, int]:
+def run(sources: list[Source], s: Settings, out: Path, credentials: dict[str, str] | None = None,
+        pages_spec: str | None = None, force: bool = False) -> tuple[int, int]:
     """Transcribe; returns (pages done, pages failed) across all sources."""
+    credentials = credentials_for(s.models, credentials, s.deny_data_collection)
     total_ok = total_failed = 0
     console.print(f"model: [bold]{s.model}[/]  profile: {s.profile}  workers: {s.workers}  dpi: {s.dpi}")
+    if s.fallback_model and s.fallback_model != s.model:
+        console.print(f"fallback: [bold]{s.fallback_model}[/] (per failed page; up to {s.retries} attempts per model)")
     with Progress(SpinnerColumn(), TextColumn("{task.description}"), BarColumn(), MofNCompleteColumn(),
                   TimeElapsedColumn(), TimeRemainingColumn(), console=console) as progress:
         log = progress.console.log
@@ -255,7 +307,7 @@ def run(sources: list[Source], s: Settings, out: Path, api_key: str, pages_spec:
             log(f"[cyan]{src.name}[/]: {n} pages, {len(wanted)} selected, {len(wanted) - len(todo)} already done")
             failed = 0
             with ThreadPoolExecutor(max_workers=s.workers) as pool:
-                futures = {pool.submit(transcribe_page, src, i, s, api_key, log): i for i in todo}
+                futures = {pool.submit(transcribe_page, src, i, s, credentials, log): i for i in todo}
                 for fut in as_completed(futures):
                     i = futures[fut]
                     try:
@@ -271,7 +323,8 @@ def run(sources: list[Source], s: Settings, out: Path, api_key: str, pages_spec:
                         runlog.record(src, s, r)
                         tries = "" if r.attempts == 1 else f", {r.attempts} attempts"
                         state = "[yellow]saved TRUNCATED[/]" if r.truncated else "[green]ok[/]"
-                        log(f"{src.label(i)} {state} {len(r.text)} chars in {r.seconds:.1f}s{tries}")
+                        fallback = f", fallback model {r.model}" if r.used_fallback else ""
+                        log(f"{src.label(i)} {state} {len(r.text)} chars in {r.seconds:.1f}s{tries}{fallback}")
                     stitch(src, out, n)
                     progress.advance(task)
             missing = stitch(src, out, n)
@@ -280,8 +333,13 @@ def run(sources: list[Source], s: Settings, out: Path, api_key: str, pages_spec:
             total_ok += len(wanted) - not_done
             total_failed += not_done
     if SPEND.calls:
-        console.print(f"spent [bold]{money(SPEND.cost)}[/] on {SPEND.calls} API call(s): "
-                      f"{SPEND.input_tokens:,} input + {SPEND.output_tokens:,} output tokens (as reported by OpenRouter)")
+        message = (f"API usage: {SPEND.calls} call(s): {SPEND.input_tokens:,} input + "
+                   f"{SPEND.output_tokens:,} output tokens")
+        if SPEND.cost_calls:
+            message += f"; OpenRouter-reported cost [bold]{money(SPEND.cost)}[/] on {SPEND.cost_calls} call(s)"
+        if SPEND.cost_calls < SPEND.calls:
+            message += "; calls without an OpenRouter cost report are not included"
+        console.print(message)
     return total_ok, total_failed
 
 

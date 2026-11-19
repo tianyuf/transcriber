@@ -1,5 +1,5 @@
-from archivist_transcribe.compare import PageCheck, check_page, merge_page
-from archivist_transcribe.profiles import CJK, EDITORIAL
+from transcriber.compare import PageCheck, check_page, merge_page
+from transcriber.profiles import CJK, EDITORIAL
 
 
 def merge(a, b, notation=EDITORIAL, c=None, drop=25):

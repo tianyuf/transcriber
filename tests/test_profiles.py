@@ -1,9 +1,9 @@
 import pytest
 
-from archivist_transcribe.auth import pkce_pair
-from archivist_transcribe.profiles import CJK, EDITORIAL, PROFILES, build_prompt, prompt_id
-from archivist_transcribe.review import segments
-from archivist_transcribe.sources import natural_key
+from transcriber.auth import pkce_pair
+from transcriber.profiles import CJK, EDITORIAL, PROFILES, build_prompt, prompt_id
+from transcriber.review import segments
+from transcriber.sources import natural_key
 
 
 @pytest.mark.parametrize("profile", list(PROFILES))

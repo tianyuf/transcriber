@@ -159,7 +159,7 @@ kbd{background:#eee;border-radius:3px;padding:0 4px;font-family:inherit}
 <script>
 const DATA = __DATA__;
 const T = DATA.T, N = DATA.notation;
-const KEY = 'archivist-transcribe:' + DATA.stem;
+const KEY = 'transcriber:' + DATA.stem;
 let dec = {};
 try { dec = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { dec = {}; }
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(dec)); } catch (e) {} }

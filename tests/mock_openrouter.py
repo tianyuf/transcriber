@@ -64,14 +64,21 @@ def make_handler(answers: dict):
                 if challenge is None or base64.urlsafe_b64encode(digest).rstrip(b"=").decode() != challenge:
                     return self.send(403, {"error": {"message": "Invalid code or code_verifier"}})
                 return self.send(200, {"key": KEY, "user_id": "user_mock"})
-            if self.path == "/api/v1/chat/completions":
+            if self.path in ("/api/v1/chat/completions", "/v1/responses"):
                 if self.headers.get("Authorization") != f"Bearer {KEY}":
                     return self.send(401, {"error": {"message": "bad key"}})
-                url = body["messages"][0]["content"][1]["image_url"]["url"]
+                native = self.path == "/v1/responses"
+                part = body["input"][0]["content"][1] if native else body["messages"][0]["content"][1]
+                url = part["image_url"] if native else part["image_url"]["url"]
                 image = base64.b64decode(url.split(",", 1)[1])
                 text = answers.get(body["model"], {}).get(hashlib.sha256(image).hexdigest())
                 if text is None:
                     return self.send(404, {"error": {"message": f"no mock answer for {body['model']}"}})
+                if native:
+                    return self.send(200, {
+                        "status": "completed", "output": [{"type": "message", "content": [
+                            {"type": "output_text", "text": text}]}],
+                        "usage": {"input_tokens": 1500, "output_tokens": 300}})
                 return self.send(200, {
                     "choices": [{"message": {"content": text}, "finish_reason": "stop"}],
                     "usage": {"prompt_tokens": 1500, "completion_tokens": 300, "cost": 0.0003}})

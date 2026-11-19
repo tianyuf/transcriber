@@ -17,16 +17,22 @@ MODEL_ALIASES = {
     "30b": "qwen/qwen3-vl-30b-a3b-instruct",
     "72b": "qwen/qwen2.5-vl-72b-instruct",
     "235b": "qwen/qwen3-vl-235b-a22b-instruct",
-    "gemini": "google/gemini-2.5-flash",
+    "gemini": "google/gemini-3.1-flash-lite",
+    "grok": "x-ai/grok-4.3",
+    "openai": "openai/gpt-6-luna",
+    "anthropic": "anthropic/claude-haiku-5.5",
     "gemma": "google/gemma-4-26b-a4b-it",
 }
-# What each alias is good for, shown by `archivist-transcribe models`.
+# What each alias is good for, shown by `transcriber models`.
 MODEL_NOTES = {
     "flash": "default: fast and very cheap, good on print and typescript in most languages; served by Alibaba, may refuse politically sensitive pages",
     "30b": "fallback when flash refuses a page; faithful, rarely 'corrects' the source",
     "72b": "second opinion for validation on CJK material",
     "235b": "strongest Qwen; slow, use as tiebreaker (validate -c) or for hard pages only",
-    "gemini": "independent second opinion for validation; strong on typed and handwritten European languages",
+    "gemini": "low-cost Google Gemini Flash-Lite through OpenRouter; independent second opinion for validation",
+    "grok": "xAI Grok through OpenRouter; current cost-first vision model with reasoning off",
+    "openai": "low-cost OpenAI GPT Luna through OpenRouter; vision-capable fallback",
+    "anthropic": "low-cost Anthropic Claude Haiku through OpenRouter; vision-capable fallback",
     "gemma": "cheap, served outside China",
 }
 
@@ -57,13 +63,16 @@ class Spend:
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
+        self.cost_calls = 0
 
     def add(self, usage: dict | None) -> None:
         if not usage:
             return
         with self.lock:
             self.calls += 1
-            self.cost += float(usage.get("cost") or 0)
+            if usage.get("cost") is not None:
+                self.cost += float(usage["cost"])
+                self.cost_calls += 1
             self.input_tokens += int(usage.get("prompt_tokens") or 0)
             self.output_tokens += int(usage.get("completion_tokens") or 0)
 
@@ -95,10 +104,10 @@ def _error_message(resp: httpx.Response) -> str:
 
 
 FATAL_HINTS = {
-    401: "OpenRouter rejected the key. Run `archivist-transcribe auth login` to sign in again.",
+    401: "OpenRouter rejected the key. Run `transcriber auth login` to sign in again.",
     402: "The OpenRouter account is out of credit or over its key's limit. Add credit at https://openrouter.ai/settings/credits.",
     403: "OpenRouter refused the request (moderation, or a provider or data policy that excludes every provider of this model).",
-    404: "No provider serves this model under the current settings: check the model id (`archivist-transcribe models`) or your OpenRouter privacy settings.",
+    404: "No provider serves this model under the current settings: check the model id (`transcriber models`) or your OpenRouter privacy settings.",
 }
 
 
@@ -127,7 +136,7 @@ def call_vision(client: httpx.Client, api_key: str, model: str, prompt: str, ima
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "X-Title": "archivist-transcribe",
+        "X-Title": "transcriber",
     }
     resp = client.post(f"{API}/chat/completions", json=payload, headers=headers, timeout=timeout)
     if resp.status_code in (408, 409, 425, 429) or resp.status_code >= 500:
@@ -135,7 +144,12 @@ def call_vision(client: httpx.Client, api_key: str, model: str, prompt: str, ima
     if resp.status_code >= 400:
         hint = FATAL_HINTS.get(resp.status_code, "Check the model id and your OpenRouter account.")
         raise FatalAPIError(f"OpenRouter error HTTP {resp.status_code}: {_error_message(resp)}\n{hint}")
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception as e:  # noqa: BLE001
+        raise APIError(f"OpenRouter returned malformed JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise APIError("OpenRouter returned malformed JSON: expected an object")
     SPEND.add(data.get("usage"))
     if "error" in data:
         raise APIError(f"API error: {data['error']}")
