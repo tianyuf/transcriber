@@ -8,23 +8,11 @@ Transcriber is a standalone command-line application. Use it directly, in script
 
 ```mermaid
 flowchart TD
-    A["PDF or images"] --> B["Inspect pages and estimate cost"]
-    B --> C["Load credentials"]
-    C --> D["Transcribe unfinished pages"]
-    D --> E{"Page successful?"}
-    E -->|Yes| H["Save text and model provenance"]
-    E -->|No| F["Retry, then use fallback if enabled"]
-    F --> G{"Recovered?"}
-    G -->|Yes| H
-    G -->|No| I["Keep available partial text and report failure"]
-    H --> J["Markdown and run.json"]
-    I --> J
-    J --> K{"Validate?"}
-    K -->|No| L["Done"]
-    K -->|Yes| M["Check with an independent model"]
-    M --> N["Compare text and flag disagreements"]
-    N --> O["Proofread against scans"]
-    O --> L
+    A["PDF or images"] --> B["Inspect and estimate cost"]
+    B --> C["Transcribe with automatic fallback"]
+    C --> D["Save Markdown and provenance"]
+    D -->|Optional| E["Validate with a second model"]
+    E --> F["Proofread against scans"]
 ```
 
 ## Install and use
