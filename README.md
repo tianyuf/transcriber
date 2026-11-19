@@ -20,7 +20,7 @@ flowchart TD
 You need [uv](https://docs.astral.sh/uv/), which installs the Python dependencies on first use.
 
 ```sh
-git clone https://github.com/tianyuf/archivist-transcribe transcriber
+git clone https://github.com/tianyuf/transcriber
 cd transcriber
 uv run transcriber --help
 ```
@@ -125,7 +125,7 @@ Plugin manifests and installation commands are not universally interchangeable. 
 For Claude Code, the optional installation commands are:
 
 ```text
-/plugin marketplace add tianyuf/archivist-transcribe
+/plugin marketplace add tianyuf/transcriber
 /plugin install transcriber@transcriber
 ```
 

@@ -12,7 +12,7 @@
     "manuscripts",
     "digital humanities"
   ],
-  "homepage": "https://github.com/tianyuf/archivist-transcribe",
-  "repository": "https://github.com/tianyuf/archivist-transcribe",
+  "homepage": "https://github.com/tianyuf/transcriber",
+  "repository": "https://github.com/tianyuf/transcriber",
   "license": "MIT"
 }
