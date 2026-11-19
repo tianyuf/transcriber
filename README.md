@@ -6,6 +6,8 @@ Each page image goes to a vision model through OpenRouter or a native provider A
 
 Transcriber is a standalone command-line application. Use it directly, in scripts, on a remote machine, or through an AI agent; no particular agent or editor is required.
 
+![Transcriber workflow: inspect scans, transcribe pages with automatic fallback, save Markdown and provenance, and optionally validate and proofread against scans.](docs/images/transcriber-workflow.png)
+
 ## Install and use
 
 You need [uv](https://docs.astral.sh/uv/), which installs the Python dependencies on first use.
