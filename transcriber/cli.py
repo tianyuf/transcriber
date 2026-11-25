@@ -1,5 +1,6 @@
 """transcriber: transcribe scanned archival documents and check the result.
 
+  transcriber app                        the point-and-click version, in your web browser
   transcriber auth login                 sign in to OpenRouter in the browser (once per computer)
   transcriber inspect FILE --sample 1-3  look before you spend: text layer, cost, page images
   transcriber transcribe FILE            transcribe every page (resumable)
@@ -7,6 +8,7 @@
   transcriber models                     recommended models and what they cost
 
 FILE can be a PDF, an image, or a folder of images (one photo per page).
+Run `transcriber` on its own in a terminal to open the app.
 """
 from __future__ import annotations
 
@@ -87,8 +89,15 @@ def settings_from(a):
                     deny_data_collection=a.deny_data_collection, notation=a.notation, fallback_model=fallback)
 
 
+def cmd_app(a) -> int:
+    from . import app
+    app.serve(port=a.port, open_browser=not a.no_browser)
+    return 0
+
+
 def cmd_transcribe(a) -> int:
     from . import transcribe
+    auth.AUTO_LOGIN = True  # someone at a terminal without a key signs in now rather than starting over
     sources = [Source(Path(p)) for p in a.sources]
     s = settings_from(a)
     out = Path(a.out)
@@ -121,6 +130,7 @@ def cmd_transcribe(a) -> int:
 
 def cmd_validate(a) -> int:
     from . import validate
+    auth.AUTO_LOGIN = True
     src = Source(Path(a.source))
     credentials = None if a.offline else {}
     n_bad = validate.validate(
@@ -136,7 +146,12 @@ def cmd_validate(a) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="transcriber", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"transcriber {__version__}")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
+
+    pp = sub.add_parser("app", help="open the point-and-click app in your web browser")
+    pp.add_argument("--port", type=int, default=0, help="port on this computer (default: any free port)")
+    pp.add_argument("--no-browser", action="store_true", help="print the address instead of opening a browser")
+    pp.set_defaults(func=cmd_app)
 
     pa = sub.add_parser("auth", help="manage OpenRouter, OpenAI, Grok, Gemini, and Anthropic credentials")
     pa.add_argument("action", choices=["login", "status", "logout"])
@@ -211,7 +226,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    a = build_parser().parse_args(argv)
+    parser = build_parser()
+    a = parser.parse_args(argv)
+    if a.cmd is None:
+        if auth.interactive():  # typed on its own, or double-clicked: open the app
+            a = parser.parse_args(["app"])
+        else:
+            parser.print_help()
+            sys.exit(2)
     sys.exit(a.func(a))
 
 

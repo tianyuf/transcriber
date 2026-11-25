@@ -14,11 +14,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 from rich.console import Console
+from rich.text import Text
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from . import __version__
@@ -249,10 +251,11 @@ def stitch(src: Source, out: Path, n_pages: int) -> int:
     return missing
 
 
-def estimate(sources: list[Source], s: Settings, out: Path, pages_spec: str | None, force: bool) -> tuple[int, float | None]:
-    """Print the pages still to do and their likely cost, including worst-case fallback use.
+def compute_estimate(sources: list[Source], s: Settings, out: Path, pages_spec: str | None,
+                     force: bool) -> dict:
+    """Pages still to do, likely tokens, and dollars per model (None when a price is unknown).
 
-    Returns (pages, dollars or None). The dollar figure excludes additional retry charges.
+    "cost" includes worst-case fallback use and excludes additional retry charges.
     """
     tin = tout = total = 0
     for src in sources:
@@ -265,29 +268,60 @@ def estimate(sources: list[Source], s: Settings, out: Path, pages_spec: str | No
         tout += per_page * len(todo)
         total += len(todo)
 
-    def show(model: str, fallback: bool = False) -> float | None:
+    def priced(model: str) -> float | None:
+        price = fetch_pricing(model)
+        return None if price is None else tin * price[0] + tout * price[1]
+
+    primary = priced(s.model)
+    fallback = priced(s.fallback_model) if s.fallback_model and s.fallback_model != s.model else None
+    cost = primary
+    if s.fallback_model and s.fallback_model != s.model:
+        cost = primary + fallback if primary is not None and fallback is not None else None
+    return {"pages": total, "input_tokens": tin, "output_tokens": tout, "model": s.model, "model_cost": primary,
+            "fallback_model": s.fallback_model if s.fallback_model != s.model else None,
+            "fallback_cost": fallback, "cost": cost}
+
+
+def estimate(sources: list[Source], s: Settings, out: Path, pages_spec: str | None, force: bool) -> tuple[int, float | None]:
+    """Print the pages still to do and their likely cost, including worst-case fallback use.
+
+    Returns (pages, dollars or None). The dollar figure excludes additional retry charges.
+    """
+    e = compute_estimate(sources, s, out, pages_spec, force)
+    total = e["pages"]
+
+    def show(model: str, cost: float | None, fallback: bool = False) -> None:
         line = (f"fallback, if every page needs it: {total} page(s) with {model}" if fallback
                 else f"estimate: {total} page(s) to transcribe with {model}")
-        line += f", ~{tin:,} input + ~{tout:,} output tokens"
-        price = fetch_pricing(model)
-        if price is None:
+        line += f", ~{e['input_tokens']:,} input + ~{e['output_tokens']:,} output tokens"
+        if cost is None:
             console.print(f"{line}; price unknown for this model")
-            return None
-        cost = tin * price[0] + tout * price[1]
-        console.print(f"{line} -> about [bold]{money(cost)}[/] "
-                      f"({money(cost / total if total else 0)}/page; retries cost extra)")
-        return cost
+        else:
+            console.print(f"{line} -> about [bold]{money(cost)}[/] "
+                          f"({money(cost / total if total else 0)}/page; retries cost extra)")
 
-    cost = show(s.model)
-    if s.fallback_model and s.fallback_model != s.model:
-        fallback_cost = show(s.fallback_model, fallback=True)
-        cost = cost + fallback_cost if cost is not None and fallback_cost is not None else None
-    return total, cost
+    show(s.model, e["model_cost"])
+    if e["fallback_model"]:
+        show(e["fallback_model"], e["fallback_cost"], fallback=True)
+    return total, e["cost"]
+
+
+def plain(message: str) -> str:
+    """A log line without rich markup, for listeners outside the terminal."""
+    try:
+        return Text.from_markup(message).plain
+    except Exception:  # noqa: BLE001 - an error message that happens to look like markup
+        return message
 
 
 def run(sources: list[Source], s: Settings, out: Path, credentials: dict[str, str] | None = None,
-        pages_spec: str | None = None, force: bool = False) -> tuple[int, int]:
-    """Transcribe; returns (pages done, pages failed) across all sources."""
+        pages_spec: str | None = None, force: bool = False, *,
+        listener: Callable[[str], None] | None = None, stop: threading.Event | None = None) -> tuple[int, int]:
+    """Transcribe; returns (pages done, pages failed or not reached) across all sources.
+
+    `listener` receives every log line as plain text. Setting `stop` lets pages already being
+    transcribed finish and save, and does not start any others.
+    """
     credentials = credentials_for(s.models, credentials, s.deny_data_collection)
     total_ok = total_failed = 0
     console.print(f"model: [bold]{s.model}[/]  profile: {s.profile}  workers: {s.workers}  dpi: {s.dpi}")
@@ -295,8 +329,14 @@ def run(sources: list[Source], s: Settings, out: Path, credentials: dict[str, st
         console.print(f"fallback: [bold]{s.fallback_model}[/] (per failed page; up to {s.retries} attempts per model)")
     with Progress(SpinnerColumn(), TextColumn("{task.description}"), BarColumn(), MofNCompleteColumn(),
                   TimeElapsedColumn(), TimeRemainingColumn(), console=console) as progress:
-        log = progress.console.log
+        def log(message: str) -> None:
+            progress.console.log(message)
+            if listener:
+                listener(plain(message))
+
         for src in sources:
+            if stop is not None and stop.is_set():
+                break
             n = src.page_count()
             pdir = pages_dir(out, src)
             pdir.mkdir(parents=True, exist_ok=True)
@@ -306,10 +346,18 @@ def run(sources: list[Source], s: Settings, out: Path, credentials: dict[str, st
             task = progress.add_task(f"[bold]{src.name}", total=len(wanted), completed=len(wanted) - len(todo))
             log(f"[cyan]{src.name}[/]: {n} pages, {len(wanted)} selected, {len(wanted) - len(todo)} already done")
             failed = 0
+            stopping = False
             with ThreadPoolExecutor(max_workers=s.workers) as pool:
                 futures = {pool.submit(transcribe_page, src, i, s, credentials, log): i for i in todo}
                 for fut in as_completed(futures):
                     i = futures[fut]
+                    if fut.cancelled():
+                        continue
+                    if stop is not None and stop.is_set() and not stopping:
+                        stopping = True
+                        for other in futures:
+                            other.cancel()  # only pages not yet started; running ones finish and are saved
+                        log("[yellow]stopping: finishing the pages already in progress[/]")
                     try:
                         r = fut.result()
                     except SystemExit:

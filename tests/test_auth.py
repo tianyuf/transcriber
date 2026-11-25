@@ -90,3 +90,62 @@ def test_auth_cli_dispatches_native_provider(monkeypatch):
     args = cli.build_parser().parse_args(["auth", "login", "--provider", "openai", "--headless"])
     with pytest.raises(SystemExit, match="OpenRouter options"):
         cli.cmd_auth(args)
+
+
+def test_terminal_runs_sign_in_when_no_key_is_saved(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(auth, "_keyring", lambda: None)
+    monkeypatch.setattr(auth, "FALLBACK_FILE", tmp_path / "credentials.json")
+    monkeypatch.setattr(auth, "CONFIG_DIR", tmp_path)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("TRANSCRIBER_NO_AUTO_LOGIN", raising=False)
+    monkeypatch.setattr(auth, "interactive", lambda: True)
+    monkeypatch.setattr(auth, "login", lambda: auth.save_key("from-browser"))
+    monkeypatch.setattr(auth, "AUTO_LOGIN", True)
+    assert auth.require_key() == "from-browser"
+    assert "not signed in to OpenRouter yet" in capsys.readouterr().out
+
+
+def test_no_automatic_sign_in_for_scripts_libraries_or_when_disabled(monkeypatch, tmp_path):
+    monkeypatch.setattr(auth, "_keyring", lambda: None)
+    monkeypatch.setattr(auth, "FALLBACK_FILE", tmp_path / "credentials.json")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(auth, "login", lambda: pytest.fail("must not open a browser"))
+    monkeypatch.setattr(auth, "AUTO_LOGIN", False)  # the library and the app
+    monkeypatch.setattr(auth, "interactive", lambda: True)
+    with pytest.raises(SystemExit, match="transcriber app"):
+        auth.require_key()
+    monkeypatch.setattr(auth, "AUTO_LOGIN", True)
+    monkeypatch.setattr(auth, "interactive", lambda: False)  # output redirected to a log, or an agent
+    with pytest.raises(SystemExit, match="auth login"):
+        auth.require_key()
+    monkeypatch.setattr(auth, "interactive", lambda: True)
+    monkeypatch.setenv("TRANSCRIBER_NO_AUTO_LOGIN", "1")
+    with pytest.raises(SystemExit):
+        auth.require_key()
+
+
+def test_terminal_asks_for_a_missing_native_key(monkeypatch, tmp_path):
+    from transcriber.providers import credentials_for
+    monkeypatch.setattr(auth, "_keyring", lambda: None)
+    monkeypatch.setattr(auth, "FALLBACK_FILE", tmp_path / "credentials.json")
+    monkeypatch.setattr(auth, "CONFIG_DIR", tmp_path)
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("TRANSCRIBER_NO_AUTO_LOGIN", raising=False)
+    monkeypatch.setattr(auth, "interactive", lambda: True)
+    monkeypatch.setattr(auth, "AUTO_LOGIN", True)
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: "typed-grok-key")
+    assert credentials_for(["grok:grok-4.3"]) == {"grok": "typed-grok-key"}
+
+
+def test_bare_command_opens_the_app_only_at_a_terminal(monkeypatch, capsys):
+    opened = []
+    monkeypatch.setattr(cli, "cmd_app", lambda a: opened.append(a.port) or 0)
+    cli.build_parser()  # the parser binds cmd_app at build time, so rebuild after patching
+    monkeypatch.setattr(auth, "interactive", lambda: True)
+    with pytest.raises(SystemExit) as e:
+        cli.main([])
+    assert e.value.code == 0 and opened == [0]
+    monkeypatch.setattr(auth, "interactive", lambda: False)
+    with pytest.raises(SystemExit) as e:
+        cli.main([])
+    assert e.value.code == 2 and "transcriber app" in capsys.readouterr().out

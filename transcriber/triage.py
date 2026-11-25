@@ -29,30 +29,50 @@ def text_quality(text: str) -> tuple[int, float, float]:
     return chars, (cjk / chars if chars else 0.0), (good / len(toks) if toks else 0.0)
 
 
-def inspect(src: Source, sample: str | None, out_dir: Path | None, dpi: int = 110) -> None:
+def summarize(src: Source) -> dict:
+    """What `inspect` reports, as data: page count, text layer, suggested profile, cost per page."""
     n = src.page_count()
-    console.print(f"[bold]{src.name}[/]: {'PDF' if src.kind == 'pdf' else 'images'}, {n} page(s)")
     probe = sorted(set([0, n // 2, n - 1]) | set(range(min(n, 3))))
+    info: dict = {"pages": n, "kind": src.kind, "probed": len(probe), "text_layer": None,
+                  "suggested_profile": None, "model": DEFAULT_MODEL, "per_page": None}
     if src.kind == "pdf":
         stats = [text_quality(src.text_layer(i)) for i in probe]
         with_text = [s for s in stats if s[0] > 50]
-        if not with_text:
-            console.print("text layer: none (image-only scan) -> needs transcription")
-        else:
-            chars = sum(s[0] for s in with_text) / len(with_text)
+        if with_text:
             cjk = sum(s[1] for s in with_text) / len(with_text)
             wordlike = sum(s[2] for s in with_text) / len(with_text)
-            verdict = ("looks clean; consider using it directly (`transcriber inspect --show-text`) "
-                       "and transcribing only bad pages" if (cjk > 0.5 or wordlike > 0.8)
-                       else "looks garbled (typical of old OCR) -> transcription will help")
-            console.print(f"text layer: on {len(with_text)}/{len(probe)} sampled pages, ~{chars:.0f} chars/page, "
-                          f"{cjk:.0%} CJK, {wordlike:.0%} word-like tokens: {verdict}")
+            info["text_layer"] = {
+                "pages": len(with_text),
+                "chars": sum(s[0] for s in with_text) / len(with_text),
+                "cjk": cjk, "wordlike": wordlike, "clean": cjk > 0.5 or wordlike > 0.8,
+            }
             if cjk > 0.3:
-                console.print("suggested profile: [bold]cjk[/]")
+                info["suggested_profile"] = "cjk"
     tokens = sum(src.image_tokens(i, 150) for i in probe) / len(probe)
     price = fetch_pricing(DEFAULT_MODEL)
     if price:
-        per_page = (tokens + PROMPT_TOKENS) * price[0] + OUTPUT_TOKENS_PER_PAGE * price[1]
+        info["per_page"] = (tokens + PROMPT_TOKENS) * price[0] + OUTPUT_TOKENS_PER_PAGE * price[1]
+    return info
+
+
+def inspect(src: Source, sample: str | None, out_dir: Path | None, dpi: int = 110) -> None:
+    info = summarize(src)
+    n = info["pages"]
+    console.print(f"[bold]{src.name}[/]: {'PDF' if src.kind == 'pdf' else 'images'}, {n} page(s)")
+    if src.kind == "pdf":
+        layer = info["text_layer"]
+        if not layer:
+            console.print("text layer: none (image-only scan) -> needs transcription")
+        else:
+            verdict = ("looks clean; consider using it directly (`transcriber inspect --show-text`) "
+                       "and transcribing only bad pages" if layer["clean"]
+                       else "looks garbled (typical of old OCR) -> transcription will help")
+            console.print(f"text layer: on {layer['pages']}/{info['probed']} sampled pages, ~{layer['chars']:.0f} chars/page, "
+                          f"{layer['cjk']:.0%} CJK, {layer['wordlike']:.0%} word-like tokens: {verdict}")
+            if info["suggested_profile"] == "cjk":
+                console.print("suggested profile: [bold]cjk[/]")
+    if info["per_page"] is not None:
+        per_page = info["per_page"]
         console.print(f"estimate with {DEFAULT_MODEL}: about {money(per_page)}/page, {money(per_page * n)} for all {n} "
                       f"pages (validation with a second model typically costs 2 to 10 times as much again)")
     if sample:

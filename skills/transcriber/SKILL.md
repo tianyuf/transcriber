@@ -25,6 +25,10 @@ Run from the user's own working folder, so that relative paths and the `output/`
 
 If `uv` is missing, ask the user before installing it. The installer is `curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux, and `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` on Windows. The first `uv run` installs the Python dependencies by itself.
 
+## The point-and-click app
+
+People who would rather not use a terminal or work through an agent can use the app instead: double-click `Transcriber.command` (Mac) or `Transcriber.bat` (Windows) in ROOT, or run `transcriber app`. It opens a page in their browser with the same steps as this workflow (sign in, choose a document, describe it, pilot, full run, check, proofread) and writes the same files next to the document. Mention it when someone finds the commands a burden. If you start it for them, run it in the background: it keeps serving until they press Quit on the page.
+
 ## Use from other programs
 
 Python programs can embed the synchronous public API:
@@ -53,7 +57,7 @@ Pages go to the selected model provider. OpenRouter forwards pages to the provid
 uv run --project "ROOT" transcriber auth status
 ```
 
-If not signed in, run `transcriber auth login` in the foreground with a timeout of at least 300 seconds. Tell the user that a browser window will open. There they sign in to OpenRouter (or create a free account and add credit) and click to approve. The key goes straight into the system keychain; it never passes through you.
+If not signed in, run `transcriber auth login` in the foreground with a timeout of at least 300 seconds. (When a person types `transcribe` or `validate` at a terminal without signing in, the tool starts this sign-in itself; commands you run are not at a terminal, so sign in explicitly.) Tell the user that a browser window will open. There they sign in to OpenRouter (or create a free account and add credit) and click to approve. The key goes straight into the system keychain; it never passes through you.
 
 - **Spending cap:** suggest `--limit 10` (USD) to anyone new to this.
 - **Remote machine (SSH):** use `--headless`. The user opens the printed address on any device and pastes back the code it shows. That code is single-use and expires in 10 minutes; it is not the key.

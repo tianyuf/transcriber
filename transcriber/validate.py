@@ -43,14 +43,15 @@ def read_page(out: Path, src: Source, i: int) -> str | None:
     return f.read_text(encoding="utf-8") if f.exists() else None
 
 
-def ensure_run(src: Source, out: Path, settings: transcribe.Settings, pages: list[int], credentials: dict[str, str]) -> None:
+def ensure_run(src: Source, out: Path, settings: transcribe.Settings, pages: list[int], credentials: dict[str, str],
+               **run_options) -> None:
     pdir = transcribe.pages_dir(out, src)
     missing = [i for i in pages if not transcribe.page_file(pdir, i).exists()]
     if not missing:
         return
     console.print(f"[cyan]{len(missing)} page(s) missing in {out}/; transcribing them with {settings.model}[/]")
     spec = ",".join(str(i + 1) for i in missing)
-    transcribe.run([src], settings, out, credentials, pages_spec=spec)
+    transcribe.run([src], settings, out, credentials, pages_spec=spec, **run_options)
 
 
 def highlight(text: str, notation) -> str:
@@ -121,8 +122,9 @@ def validate(src: Source, dir_a: Path, dir_b: Path, credentials: dict[str, str] 
              dir_c: Path | None = None, model_c: str = DEFAULT_C, c_all: bool = False,
              fallback_model: str | None = None, use_fallback: bool = True, workers: int = 4,
              threshold: float = 0.9, drop_chars: int | None = None, conflict_rate: float = 0.02,
-             show_all: bool = False) -> int:
-    """Returns the number of flagged pages."""
+             show_all: bool = False, listener=None, stop=None) -> int:
+    """Returns the number of flagged pages. `listener` and `stop` are passed to `transcribe.run`."""
+    run_options = {"listener": listener, "stop": stop}
     n = src.page_count()
     if dir_a == dir_b:
         raise SystemExit("A and B must be different folders")
@@ -149,7 +151,7 @@ def validate(src: Source, dir_a: Path, dir_b: Path, credentials: dict[str, str] 
     done_a = [i for i in range(n) if read_page(dir_a, src, i) is not None]
     if credentials is not None:
         ensure_run(src, dir_b, transcribe.Settings(model=model_b, fallback_model=fallback_model, **base),
-                   done_a, credentials)
+                   done_a, credentials, **run_options)
     drop = drop_chars or DROP_CHARS[notation.name]
 
     texts_a = [read_page(dir_a, src, i) for i in range(n)]
@@ -169,7 +171,7 @@ def validate(src: Source, dir_a: Path, dir_b: Path, credentials: dict[str, str] 
         want = [c.page - 1 for c in checks] if c_all else [c.page - 1 for c in checks if not c.ok]
         if credentials is not None:
             ensure_run(src, dir_c, transcribe.Settings(model=model_c, fallback_model=fallback_model, **base),
-                       want, credentials)
+                       want, credentials, **run_options)
         by_page = {c.page - 1: k for k, c in enumerate(checks)}
         n_three = 0
         for i in want:

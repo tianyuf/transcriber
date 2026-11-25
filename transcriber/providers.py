@@ -111,14 +111,8 @@ def credentials_for(models: list[str], credentials: dict[str, str] | None = None
             from .auth import require_key
             result[provider] = require_key()
             continue
-        from .auth import stored_key
-        key, _ = stored_key(provider)
-        if key:
-            result[provider] = key
-        else:
-            names = " or ".join(PROVIDER_ENV[provider])
-            raise SystemExit(f"{name} requires {names} in the environment or `transcriber auth login --provider "
-                             f"{provider}`. Transcriber never prints the key")
+        from .auth import require_native_key
+        result[provider] = require_native_key(provider, name)
     return result
 
 

@@ -40,6 +40,20 @@ ACCOUNT = "openrouter"
 CONFIG_DIR = Path(os.environ.get("TRANSCRIBER_CONFIG_DIR") or Path.home() / ".config" / "transcriber")
 FALLBACK_FILE = CONFIG_DIR / "credentials.json"
 LOGIN_TIMEOUT = 300  # seconds to wait for the browser
+# Set by the command line for runs that need a key: when none is stored and someone is at the
+# terminal, sign in there and then instead of stopping. Library callers and the app leave it off.
+AUTO_LOGIN = False
+
+
+def interactive() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def can_auto_login() -> bool:
+    return AUTO_LOGIN and interactive() and not os.environ.get("TRANSCRIBER_NO_AUTO_LOGIN")
 
 
 # ---------------------------------------------------------------- storage
@@ -185,9 +199,27 @@ def logout_native(provider: str) -> None:
 
 def require_key() -> str:
     key, _ = stored_key()
+    if not key and can_auto_login():
+        print("You are not signed in to OpenRouter yet, so let's do that first.", flush=True)
+        login()
+        key, _ = stored_key()
     if not key:
         sys.exit("Not signed in to OpenRouter. Run `transcriber auth login` first "
-                 "(or set OPENROUTER_API_KEY).")
+                 "(or set OPENROUTER_API_KEY), or use the point-and-click app: `transcriber app`.")
+    return key
+
+
+def require_native_key(provider: str, model: str) -> str:
+    key, _ = stored_key(provider)
+    if not key and can_auto_login():
+        print(f"{model} needs a {NATIVE_LABELS[provider]} API key, and none is saved yet.", flush=True)
+        login_native(provider)
+        key, _ = stored_key(provider)
+    if not key:
+        from .providers import PROVIDER_ENV
+        names = " or ".join(PROVIDER_ENV[provider])
+        raise SystemExit(f"{model} requires {names} in the environment or `transcriber auth login --provider "
+                         f"{provider}`. Transcriber never prints the key")
     return key
 
 

@@ -15,7 +15,21 @@ flowchart TD
     E --> F["Proofread against scans"]
 ```
 
-## Install and use
+## The app: no typing needed
+
+1. Download Transcriber: on [its GitHub page](https://github.com/tianyuf/transcriber), click **Code**, then **Download ZIP**, and unzip it.
+2. Double-click **`Transcriber.command`** (Mac) or **`Transcriber.bat`** (Windows). The first time, it offers to install [uv](https://docs.astral.sh/uv/), a small free program that installs and runs Transcriber, and then takes a minute to set itself up.
+3. Transcriber opens in your web browser and walks you through it: sign in to OpenRouter, choose a PDF or a folder of photos, describe it, try a few pages next to their scans, transcribe the rest, and check it with a second model.
+
+Keep the small window that opens alongside it while you work; closing it quits Transcriber. Results go into an `output` folder next to your document.
+
+On a Mac, a downloaded `Transcriber.command` may at first be blocked as coming from an unidentified developer. Control-click it and choose **Open**, or allow it under System Settings → Privacy & Security. You only need to do this once.
+
+If you use a terminal, `uv run transcriber` on its own (or `transcriber app`) opens the same app.
+
+The app runs only on your computer. Nothing else can reach it, and API keys go straight into your system keychain without being shown on the page.
+
+## Install and use from the command line
 
 You need [uv](https://docs.astral.sh/uv/), which installs the Python dependencies on first use.
 
@@ -28,7 +42,7 @@ uv run transcriber --help
 A typical workflow is:
 
 ```sh
-uv run transcriber auth login                      # sign in to OpenRouter in the browser (once)
+uv run transcriber auth login                      # sign in to OpenRouter in the browser (once; a run asks if you skip it)
 uv run transcriber inspect letters.pdf --sample 1-3
 uv run transcriber transcribe letters.pdf --language English
 uv run transcriber validate letters.pdf            # second model + proofreading app
@@ -41,6 +55,8 @@ To make the `transcriber` command available outside the checkout, install it as 
 uv tool install .
 transcriber --help
 ```
+
+If you skip `auth login`, the first `transcribe` or `validate` you type in a terminal opens the sign-in itself and then carries on; a run with a native model asks for that provider's key the same way. Scripts, logs and agents (anything not at a terminal) get the usual "not signed in" message instead; `TRANSCRIBER_NO_AUTO_LOGIN=1` turns the prompt off everywhere.
 
 On a remote machine without a browser, use `transcriber auth login --headless`. Automation can supply an OpenRouter key through the `OPENROUTER_API_KEY` environment variable instead of using the system keychain.
 
